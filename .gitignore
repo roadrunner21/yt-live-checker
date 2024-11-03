@@ -1,0 +1,21 @@
+# Dependency directories
+node_modules/
+
+# Log files
+*.log
+
+# Temporary or debug response files
+last_response.html
+error_response.html
+last_video_response.html
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Lock files
+package-lock.json
+
+# IDE specific files (optional, depending on your editor)
+.vscode/
+.idea/

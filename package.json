@@ -1,0 +1,29 @@
+{
+  "name": "yt-live-checker",
+  "version": "1.0.0",
+  "description": "A tool to check if a YouTube channel is currently live streaming.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "YouTube",
+    "live",
+    "stream",
+    "channel",
+    "status",
+    "checker"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/yt-live-checker.git"
+  },
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "jsonpath-plus": "^10.1.0"
+  }
+}
