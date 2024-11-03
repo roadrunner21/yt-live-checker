@@ -103,7 +103,7 @@ function extractChannelInfo(ytInitialData, defaultChannelId) {
     return { channelName, channelIdExtracted };
 }
 
-module.exports = {};
+module.exports = { checkChannelLiveStatus };
 
 // Usage example
 if (require.main === module) {
