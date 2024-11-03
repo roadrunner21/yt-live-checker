@@ -1,4 +1,4 @@
-// Import required modules
+// index.js
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
@@ -11,27 +11,61 @@ const LOG_FILE = path.join(__dirname, 'channel_live_check.log');
 const LAST_RESPONSE_FILE = path.join(__dirname, 'last_response.html');
 const ERROR_RESPONSE_FILE = path.join(__dirname, 'error_response.html');
 
-// Configure winston logger
-const logger = createLogger({
-    level: 'info',
-    format: format.combine(
-        format.timestamp(),
-        format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
-    ),
-    transports: [
-        new transports.File({ filename: LOG_FILE }) // Log to file only
-    ]
-});
+/**
+ * Initialize Logger
+ * @param {Object} [customLogger] - Optional custom logger provided by the host application.
+ * @returns {Object} - Configured logger instance.
+ */
+function initializeLogger(customLogger) {
+    if (customLogger) {
+        return customLogger;
+    }
+
+    // Determine if the package is running in development mode
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+
+    const loggerTransports = [];
+
+    if (isDevelopment) {
+        // In development, log to console and file
+        loggerTransports.push(new transports.Console());
+        loggerTransports.push(new transports.File({ filename: LOG_FILE }));
+    } else {
+        // In production (when used as a dependency), log only warnings and errors to console
+        loggerTransports.push(new transports.Console({
+            level: 'warn',
+            format: format.combine(
+                format.timestamp(),
+                format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
+            )
+        }));
+    }
+
+    return createLogger({
+        level: isDevelopment ? 'debug' : 'info',
+        format: format.combine(
+            format.timestamp(),
+            format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
+        ),
+        transports: loggerTransports
+    });
+}
+
+// Initialize logger with optional custom logger
+const logger = initializeLogger();
 
 // Helper function to log messages using winston
-function logMessage(message) {
-    logger.info(message); // Log to winston, which writes to the log file
+function logMessage(message, level = 'info') {
+    logger.log({ level, message });
 }
 
 // Main function to check if a YouTube channel is live
-async function checkChannelLiveStatus(channelId) {
+async function checkChannelLiveStatus(channelId, options = {}) {
+    // Allow overriding the logger via options
+    const pkgLogger = options.logger || logger;
+
     const url = `https://www.youtube.com/channel/${channelId}/live`;
-    logMessage(`Checking live status for channel: ${channelId} at ${url}`);
+    pkgLogger.info(`Checking live status for channel: ${channelId} at ${url}`);
 
     try {
         const response = await axios.get(url, {
@@ -40,7 +74,7 @@ async function checkChannelLiveStatus(channelId) {
             validateStatus: status => status >= 200 && status < 400,
         });
 
-        logMessage('Request successful, parsing HTML...');
+        pkgLogger.debug('Request successful, parsing HTML...');
         fs.writeFileSync(LAST_RESPONSE_FILE, response.data, 'utf8');
 
         const $ = cheerio.load(response.data);
@@ -52,14 +86,14 @@ async function checkChannelLiveStatus(channelId) {
                 const match = htmlContent.match(/ytInitialData\s*=\s*(\{.*?});/s);
                 if (match && match[1]) {
                     ytInitialData = JSON.parse(match[1]);
-                    logMessage('ytInitialData parsed successfully.');
+                    pkgLogger.debug('ytInitialData parsed successfully.');
                     return false; // Stop after finding ytInitialData
                 }
             }
         });
 
         if (!ytInitialData) {
-            logMessage('ytInitialData not found.');
+            pkgLogger.warn('ytInitialData not found.');
             return { isLive: false, channelId, channelName: 'Unknown Channel' };
         }
 
@@ -69,7 +103,7 @@ async function checkChannelLiveStatus(channelId) {
         if (primaryInfo) {
             const viewCountRenderer = primaryInfo.viewCount?.videoViewCountRenderer;
             if (viewCountRenderer?.isLive) {
-                logMessage(`Channel ${channelId} is live!`);
+                pkgLogger.info(`Channel ${channelId} is live!`);
 
                 const title = primaryInfo.title?.runs?.[0]?.text || '';
                 const viewCount = (viewCountRenderer.viewCount?.runs || [])
@@ -85,10 +119,10 @@ async function checkChannelLiveStatus(channelId) {
             }
         }
 
-        logMessage(`Channel ${channelId} is not live at the moment.`);
+        pkgLogger.info(`Channel ${channelId} is not live at the moment.`);
         return { isLive: false, channelId: channelIdExtracted, channelName };
     } catch (error) {
-        logMessage(`Error checking live status: ${error.message}`);
+        pkgLogger.error(`Error checking live status: ${error.message}`);
         fs.writeFileSync(ERROR_RESPONSE_FILE, error.response?.data || '', 'utf8');
         throw error;
     }

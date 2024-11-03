@@ -1,3 +1,4 @@
+
 # yt-live-checker
 
 A Node.js tool to check if a YouTube channel is currently live streaming.
@@ -5,6 +6,8 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 ## Table of Contents
 - [Installation](#installation)
 - [Usage](#usage)
+   - [As a Standalone Tool](#as-a-standalone-tool)
+   - [As a Dependency](#as-a-dependency)
 - [Example](#example)
 - [Dependencies](#dependencies)
 - [License](#license)
@@ -28,7 +31,9 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 ## Usage
 
-To use `yt-live-checker`, run the following command with the YouTube channel ID as an argument:
+### As a Standalone Tool
+
+To use `yt-live-checker` as a standalone CLI tool, run the following command with the YouTube channel ID as an argument:
 
 ```bash
 node index.js <channelId>
@@ -40,6 +45,38 @@ Example:
 ```bash
 node index.js UCCAfRoTJrKPbSrh_Eg3i4vg
 ```
+
+### As a Dependency
+
+To use `yt-live-checker` in your project, first install it via npm:
+
+```bash
+npm install yt-live-checker
+```
+
+Then, import and use it in your code:
+
+```javascript
+const { checkChannelLiveStatus } = require('yt-live-checker');
+
+// Optional: Use your own logger
+const winston = require('winston');
+const customLogger = winston.createLogger({
+    level: 'info',
+    format: winston.format.simple(),
+    transports: [new winston.transports.Console()]
+});
+
+checkChannelLiveStatus('UCCAfRoTJrKPbSrh_Eg3i4vg', { logger: customLogger })
+    .then(result => {
+        console.log(result);
+    })
+    .catch(error => {
+        console.error(error);
+    });
+```
+
+If you don't provide a custom logger, `yt-live-checker` will use its default logging configuration based on the `NODE_ENV` environment variable.
 
 ## Example Output
 
@@ -73,8 +110,8 @@ This project relies on the following Node.js packages:
 - `axios` for making HTTP requests
 - `cheerio` for parsing HTML
 - `jsonpath-plus` for querying JSON data
+- `winston` for logging
 
 ## License
 
 This project is licensed under the ISC License.
-# yt-live-checker
