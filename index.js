@@ -21,23 +21,19 @@ function initializeLogger(customLogger) {
         return customLogger;
     }
 
-    // Determine if the package is running in development mode
     const isDevelopment = process.env.NODE_ENV !== 'production';
 
     const loggerTransports = [];
-
     if (isDevelopment) {
-        // In development, log to console and file
         loggerTransports.push(new transports.Console());
         loggerTransports.push(new transports.File({ filename: LOG_FILE }));
     } else {
-        // In production (when used as a dependency), log only warnings and errors to console
         loggerTransports.push(new transports.Console({
             level: 'warn',
             format: format.combine(
                 format.timestamp(),
-                format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
-            )
+                format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`),
+            ),
         }));
     }
 
@@ -45,23 +41,17 @@ function initializeLogger(customLogger) {
         level: isDevelopment ? 'debug' : 'info',
         format: format.combine(
             format.timestamp(),
-            format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
+            format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`),
         ),
-        transports: loggerTransports
+        transports: loggerTransports,
     });
 }
 
 // Initialize logger with optional custom logger
 const logger = initializeLogger();
 
-// Helper function to log messages using winston
-function logMessage(message, level = 'info') {
-    logger.log({ level, message });
-}
-
 // Main function to check if a YouTube channel is live
 async function checkChannelLiveStatus(channelId, options = {}) {
-    // Allow overriding the logger via options
     const pkgLogger = options.logger || logger;
 
     const url = `https://www.youtube.com/channel/${channelId}/live`;
@@ -80,16 +70,17 @@ async function checkChannelLiveStatus(channelId, options = {}) {
         const $ = cheerio.load(response.data);
         let ytInitialData = null;
 
-        $('script').each((_, script) => {
-            const htmlContent = $(script).html();
-            if (htmlContent && htmlContent.includes('ytInitialData')) {
+        $('script').each(function(_) {
+            const htmlContent = String($(this).html() || ''); // Use 'this' instead of 'script'
+            if (htmlContent.includes('ytInitialData')) {
                 const match = htmlContent.match(/ytInitialData\s*=\s*(\{.*?});/s);
                 if (match && match[1]) {
                     ytInitialData = JSON.parse(match[1]);
                     pkgLogger.debug('ytInitialData parsed successfully.');
-                    return false; // Stop after finding ytInitialData
+                    return false; // Stop the .each loop after finding ytInitialData
                 }
             }
+            return undefined; // Explicitly return undefined for all other cases
         });
 
         if (!ytInitialData) {
@@ -147,19 +138,19 @@ function extractChannelInfo(ytInitialData, defaultChannelId) {
     return { channelName, channelIdExtracted };
 }
 
-module.exports = { checkChannelLiveStatus };
+// Export only the main function
+exports.checkChannelLiveStatus = checkChannelLiveStatus;
 
-// Usage example
 if (require.main === module) {
     const channelId = process.argv[2];
     if (!channelId) {
-        console.error('Please provide a YouTube channel ID.');
+        logger.error('Please provide a YouTube channel ID.'); // Replaced console.error with logger.error
         process.exit(1);
     }
 
     checkChannelLiveStatus(channelId)
         .then(result => {
-            logger.info(result.isLive ? `The channel is live!` : 'The channel is not live currently.');
+            logger.info(result.isLive ? 'The channel is live!' : 'The channel is not live currently.');
             logger.info(JSON.stringify(result, null, 2));
         })
         .catch(error => {
