@@ -3,6 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
+const { createLogger, format, transports } = require('winston');
 
 // Constants and Configuration
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
@@ -10,12 +11,21 @@ const LOG_FILE = path.join(__dirname, 'channel_live_check.log');
 const LAST_RESPONSE_FILE = path.join(__dirname, 'last_response.html');
 const ERROR_RESPONSE_FILE = path.join(__dirname, 'error_response.html');
 
-// Helper function to log messages
+// Configure winston logger
+const logger = createLogger({
+    level: 'info',
+    format: format.combine(
+        format.timestamp(),
+        format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`)
+    ),
+    transports: [
+        new transports.File({ filename: LOG_FILE }) // Log to file only
+    ]
+});
+
+// Helper function to log messages using winston
 function logMessage(message) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] ${message}\n`;
-    fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
-    console.log(logEntry.trim());
+    logger.info(message); // Log to winston, which writes to the log file
 }
 
 // Main function to check if a YouTube channel is live
@@ -115,10 +125,10 @@ if (require.main === module) {
 
     checkChannelLiveStatus(channelId)
         .then(result => {
-            console.log(result.isLive ? `The channel is live!` : 'The channel is not live currently.');
-            console.log(JSON.stringify(result, null, 2));
+            logger.info(result.isLive ? `The channel is live!` : 'The channel is not live currently.');
+            logger.info(JSON.stringify(result, null, 2));
         })
         .catch(error => {
-            console.error('Failed to check live status:', error.message);
+            logger.error('Failed to check live status:', error.message);
         });
 }
