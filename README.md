@@ -114,4 +114,5 @@ This project relies on the following Node.js packages:
 
 ## License
 
-This project is licensed under the ISC License.
+This project is licensed under the [Prosperity Public License](./LICENSE). You are free to use this software non-commercially. For commercial use, please contact the author for permission or refer to the terms in the license.
+
