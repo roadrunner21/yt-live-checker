@@ -13,10 +13,14 @@ const ERROR_RESPONSE_FILE = path.join(__dirname, 'error_response.html');
 
 /**
  * Initialize Logger
- * @param {Object} [customLogger] - Optional custom logger provided by the host application.
+ * @param {Object} [options] - Options for initializing the logger.
+ * @param {Object} [options.customLogger] - Optional custom logger provided by the host application.
+ * @param {boolean} [options.enableLogging] - Enable logging when used as a dependency.
  * @returns {Object} - Configured logger instance.
  */
-function initializeLogger(customLogger) {
+function initializeLogger(options = {}) {
+    const { customLogger, enableLogging } = options;
+
     if (customLogger) {
         return customLogger;
     }
@@ -24,10 +28,21 @@ function initializeLogger(customLogger) {
     const isDevelopment = process.env.NODE_ENV !== 'production';
 
     const loggerTransports = [];
-    if (isDevelopment) {
+
+    if (isDevelopment || enableLogging) {
         loggerTransports.push(new transports.Console());
-        loggerTransports.push(new transports.File({ filename: LOG_FILE }));
-    } else {
+
+        if (isDevelopment) {
+            loggerTransports.push(new transports.File({ filename: LOG_FILE }));
+        }
+    }
+
+    if (!isDevelopment && !enableLogging) {
+        // Silent logger
+        loggerTransports.push(new transports.Console({
+            silent: true,
+        }));
+    } else if (!isDevelopment && enableLogging) {
         loggerTransports.push(new transports.Console({
             level: 'warn',
             format: format.combine(
@@ -38,7 +53,7 @@ function initializeLogger(customLogger) {
     }
 
     return createLogger({
-        level: isDevelopment ? 'debug' : 'info',
+        level: isDevelopment || enableLogging ? 'debug' : 'info',
         format: format.combine(
             format.timestamp(),
             format.printf(({ timestamp, level, message }) => `[${timestamp}] ${level.toUpperCase()}: ${message}`),
@@ -50,10 +65,16 @@ function initializeLogger(customLogger) {
 // Initialize logger with optional custom logger
 const logger = initializeLogger();
 
-// Main function to check if a YouTube channel is live
+/**
+ * Check if a YouTube channel is live
+ * @param {string} channelId - The YouTube channel ID.
+ * @param {Object} [options] - Options for the function.
+ * @param {Object} [options.customLogger] - Optional custom logger provided by the host application.
+ * @param {boolean} [options.enableLogging] - Enable logging when used as a dependency.
+ * @returns {Promise<Object>} - Object containing live status and channel info.
+ */
 async function checkChannelLiveStatus(channelId, options = {}) {
-    const pkgLogger = options.logger || logger;
-
+    const pkgLogger = initializeLogger(options);
     const url = `https://www.youtube.com/channel/${channelId}/live`;
     pkgLogger.info(`Checking live status for channel: ${channelId} at ${url}`);
 
@@ -70,17 +91,17 @@ async function checkChannelLiveStatus(channelId, options = {}) {
         const $ = cheerio.load(response.data);
         let ytInitialData = null;
 
-        $('script').each(function(_) {
-            const htmlContent = String($(this).html() || ''); // Use 'this' instead of 'script'
+        $('script').each(function() {
+            const htmlContent = String($(this).html() || '');
             if (htmlContent.includes('ytInitialData')) {
                 const match = htmlContent.match(/ytInitialData\s*=\s*(\{.*?});/s);
                 if (match && match[1]) {
                     ytInitialData = JSON.parse(match[1]);
                     pkgLogger.debug('ytInitialData parsed successfully.');
-                    return false; // Stop the .each loop after finding ytInitialData
+                    return false;
                 }
             }
-            return undefined; // Explicitly return undefined for all other cases
+            return undefined;
         });
 
         if (!ytInitialData) {
@@ -88,7 +109,7 @@ async function checkChannelLiveStatus(channelId, options = {}) {
             return { isLive: false, channelId, channelName: 'Unknown Channel' };
         }
 
-        const { channelIdExtracted, channelName } = extractChannelInfo(ytInitialData, channelId);
+        const { channelName, channelIdExtracted } = extractChannelInfo(ytInitialData, channelId);
 
         const primaryInfo = ytInitialData?.contents?.twoColumnWatchNextResults?.results?.results?.contents?.[0]?.videoPrimaryInfoRenderer;
         if (primaryInfo) {
@@ -141,10 +162,11 @@ function extractChannelInfo(ytInitialData, defaultChannelId) {
 // Export only the main function
 exports.checkChannelLiveStatus = checkChannelLiveStatus;
 
+// If run as a standalone script, take the channel ID from CLI
 if (require.main === module) {
     const channelId = process.argv[2];
     if (!channelId) {
-        logger.error('Please provide a YouTube channel ID.'); // Replaced console.error with logger.error
+        logger.error('Please provide a YouTube channel ID.');
         process.exit(1);
     }
 
@@ -154,6 +176,6 @@ if (require.main === module) {
             logger.info(JSON.stringify(result, null, 2));
         })
         .catch(error => {
-            logger.error('Failed to check live status:', error.message);
+            logger.error(`Failed to check live status: ${error.message}`);
         });
 }

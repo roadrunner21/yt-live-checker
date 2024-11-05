@@ -17,7 +17,7 @@ export default [
         rules: {
             // Core code quality rules
             "no-unused-vars": ["warn", { args: "none", ignoreRestSiblings: true }],
-            "no-console": "warn",
+            "no-console": "error",
             "consistent-return": "error",
             "curly": ["error", "all"],
             "eqeqeq": ["error", "always"],
