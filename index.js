@@ -112,27 +112,63 @@ async function checkChannelLiveStatus(channelId, options = {}) {
         const { channelName, channelIdExtracted } = extractChannelInfo(ytInitialData, channelId);
 
         const primaryInfo = ytInitialData?.contents?.twoColumnWatchNextResults?.results?.results?.contents?.[0]?.videoPrimaryInfoRenderer;
+
+        /** @type YouTubeLiveInfo */
+        let result = null;
+        
         if (primaryInfo) {
             const viewCountRenderer = primaryInfo.viewCount?.videoViewCountRenderer;
             if (viewCountRenderer?.isLive) {
+                let isLive = true;
                 pkgLogger.info(`Channel ${channelId} is live!`);
 
                 const title = primaryInfo.title?.runs?.[0]?.text || '';
+                /** @type String */
                 const viewCount = (viewCountRenderer.viewCount?.runs || [])
                     .map(run => run.text)
                     .join('')
                     .replace(' watching now', '')
                     .trim();
 
+                if (viewCount?.includes(' waiting')) {
+                    isLive = false;
+                } else {
+                    pkgLogger.info(`Channel ${channelId} is live!`);
+                }
+
+                result.title
+
                 const videoId = ytInitialData?.currentVideoEndpoint?.watchEndpoint?.videoId;
                 const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-                return { isLive: true, videoId, title, viewCount, channelName, channelId: channelIdExtracted, videoUrl };
+                result = {
+                    isLive: isLive,
+                    videoId: isLive ? videoId : null,
+                    title: isLive ? title : null,
+                    viewCount,
+                    channelName,
+                    channelId: channelIdExtracted,
+                    videoUrl: isLive ? videoUrl : null
+                };
             }
         }
 
-        pkgLogger.info(`Channel ${channelId} is not live at the moment.`);
-        return { isLive: false, channelId: channelIdExtracted, channelName };
+      if (result?.isLive) {
+         // do nothing else
+      } else {
+         pkgLogger.info(`Channel ${channelId} is not live at the moment.`);
+         result = result ?? {
+            isLive: false,
+            videoId: null,
+            title: null,
+            viewCount: null,
+            channelName,
+            channelId: channelIdExtracted,
+            videoUrl: null
+         };
+      }
+
+      return result;
     } catch (error) {
         pkgLogger.error(`Error checking live status: ${error.message}`);
         fs.writeFileSync(ERROR_RESPONSE_FILE, error.response?.data || '', 'utf8');
@@ -140,7 +176,12 @@ async function checkChannelLiveStatus(channelId, options = {}) {
     }
 }
 
-// Helper function to extract channel information
+/**
+ * Extracts YouTube channel information from scraped data.
+ * @param {object} [ytInitialData] - The raw YouTube page data object.
+ * @param {string} [defaultChannelId] - A fallback channel ID if none is found in the data.
+ * @returns {{ channelName: string, channelIdExtracted: string }} - The extracted channel name and ID.
+ */
 function extractChannelInfo(ytInitialData, defaultChannelId) {
     let channelName = 'Unknown Channel';
     let channelIdExtracted = defaultChannelId;

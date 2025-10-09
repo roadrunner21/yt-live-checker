@@ -16,7 +16,7 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/yt-live-checker.git
+   git clone https://github.com/roadrunner21/yt-live-checker.git
    ```
 
 2. Navigate to the project directory:
