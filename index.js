@@ -135,9 +135,7 @@ async function checkChannelLiveStatus(channelId, options = {}) {
                 } else {
                     pkgLogger.info(`Channel ${channelId} is live!`);
                 }
-
-                result.title
-
+                
                 const videoId = ytInitialData?.currentVideoEndpoint?.watchEndpoint?.videoId;
                 const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
