@@ -8,7 +8,7 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 - [Usage](#usage)
    - [As a Standalone Tool](#as-a-standalone-tool)
    - [As a Dependency](#as-a-dependency)
-- [Example](#example)
+- [Example Output](#example-output)
 - [Dependencies](#dependencies)
 - [License](#license)
 
@@ -65,13 +65,15 @@ Tests are organised under `tests/unit` (pure parsing/adapters) and `tests/integr
 
 ### As a Dependency
 
-To use `yt-live-checker` in your project, first install it via npm:
+The package is not on the public npm registry yet, but you can add the Git repository directly to your project:
 
 ```bash
-npm install yt-live-checker
+npm install github:roadrunner21/yt-live-checker
+# or with a specific commit/branch/tag
+# npm install github:roadrunner21/yt-live-checker#main
 ```
 
-Then, import and use it in your code:
+Then consume it exactly as you would a published package:
 
 ```javascript
 const { checkChannelLiveStatus } = require('yt-live-checker');
@@ -93,7 +95,7 @@ checkChannelLiveStatus('@BusinessInsider', { customLogger })
     });
 ```
 
-ES module consumers can import directly:
+Native ES module consumers can import directly:
 
 ```javascript
 import { checkChannelLiveStatus } from 'yt-live-checker';
@@ -101,9 +103,7 @@ import { checkChannelLiveStatus } from 'yt-live-checker';
 const result = await checkChannelLiveStatus('@BusinessInsider');
 ```
 
-If you don't provide a custom logger, `yt-live-checker` will use its default logging configuration based on the `NODE_ENV` environment variable.
-
-Whenever multiple streams are in progress or scheduled, the returned object includes a `streams` property with `live` and `scheduled` collections (the scheduled list is `null` when there are no upcoming events) so you can inspect every event, while the top-level fields continue to describe the primary live stream for backwards compatibility. Each entry provides `viewerCount` as a number (when YouTube exposes “NN watching/waiting”), alongside the original text.
+If you don't provide a custom logger, `yt-live-checker` falls back to its default configuration based on the `NODE_ENV` environment variable.
 
 ## Example Output
 
