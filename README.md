@@ -58,6 +58,7 @@ npm run check -- <channelIdentifier>
 npm run check:streams -- <channelIdentifier>
 npm run check:streams-json -- <channelIdentifier>
 npm run check:save-html -- <channelIdentifier>
+npm test                               # run parser/viewer smoke tests
 ```
 
 ### As a Dependency
