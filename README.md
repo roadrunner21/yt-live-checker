@@ -16,7 +16,7 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/marcohefti/js-yt-live-indexer.git
+   git clone https://github.com/roadrunner21/yt-live-checker.git
    ```
 
 2. Navigate to the project directory:
@@ -91,6 +91,14 @@ checkChannelLiveStatus('@BusinessInsider', { customLogger })
     .catch(error => {
         console.error(error);
     });
+```
+
+ES module consumers can import directly:
+
+```javascript
+import { checkChannelLiveStatus } from 'yt-live-checker';
+
+const result = await checkChannelLiveStatus('@BusinessInsider');
 ```
 
 If you don't provide a custom logger, `yt-live-checker` will use its default logging configuration based on the `NODE_ENV` environment variable.

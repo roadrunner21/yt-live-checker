@@ -3,6 +3,16 @@
   "version": "1.1.0",
   "description": "A tool to check if a YouTube channel is currently live streaming.",
   "main": "src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.mjs",
+      "require": "./src/index.js"
+    },
+    "./cli": {
+      "import": "./src/cli/index.js",
+      "require": "./src/cli/index.js"
+    }
+  },
   "scripts": {
     "start": "node src/cli/index.js",
     "lint": "eslint .",
@@ -23,7 +33,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/yt-live-checker.git"
+    "url": "https://github.com/roadrunner21/yt-live-checker.git"
   },
   "author": "Your Name <your.email@example.com>",
   "license": "MIT",

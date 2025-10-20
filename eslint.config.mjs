@@ -15,6 +15,16 @@ export default [
             },
         },
     },
+    {
+        files: ['**/*.mjs'],
+        languageOptions: {
+            ecmaVersion: 2021,
+            sourceType: 'module',
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
     js.configs.recommended,
     {
         rules: {
