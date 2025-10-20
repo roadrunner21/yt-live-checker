@@ -95,19 +95,46 @@ async function resolveChannelIdentifier(identifier, pkgLogger) {
     }
     handle = handle.split('/')[0];
 
-    const handleUrl = `https://www.youtube.com/${handle}`;
-    pkgLogger?.debug?.(`Resolving handle ${handle} via ${handleUrl}`);
+    const initialUrl = `https://www.youtube.com/${handle}`;
+    pkgLogger?.debug?.(`Resolving handle ${handle} via ${initialUrl}`);
+
+    const requestConfig = {
+        headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US' },
+        maxRedirects: 0,
+        validateStatus: status => status >= 200 && status < 400,
+    };
 
     let response;
-    try {
-        response = await axios.get(handleUrl, {
-            headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US' },
-            maxRedirects: 0,
-            validateStatus: status => status >= 200 && status < 400,
-        });
-    } catch (error) {
-        const reason = error.response ? `HTTP ${error.response.status}` : error.message;
-        throw new Error(`Failed to resolve handle ${handle}: ${reason}`);
+    let currentUrl = initialUrl;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            response = await axios.get(currentUrl, requestConfig);
+        } catch (error) {
+            const reason = error.response ? `HTTP ${error.response.status}` : error.message;
+            throw new Error(`Failed to resolve handle ${handle}: ${reason}`);
+        }
+
+        const isRedirect = response.status >= 300 && response.status < 400;
+        const redirectLocation = response.headers?.location;
+        const hasContent = typeof response.data === 'string' && response.data.trim().length > 0;
+
+        if (isRedirect && redirectLocation) {
+            const nextUrl = new URL(redirectLocation, currentUrl).toString();
+            pkgLogger?.debug?.(`Handle ${handle} redirected to ${nextUrl}`);
+            currentUrl = nextUrl;
+            continue;
+        }
+
+        if (hasContent) {
+            break;
+        }
+
+        // If no content but no redirect info, break to error out.
+        break;
+    }
+
+    if (!response || typeof response.data !== 'string' || response.data.trim().length === 0) {
+        throw new Error(`Failed to resolve handle ${handle}: Empty response from ${currentUrl}`);
     }
 
     const $ = cheerio.load(response.data);
