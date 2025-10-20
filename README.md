@@ -16,7 +16,7 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/yt-live-checker.git
+   git clone https://github.com/marcohefti/js-yt-live-indexer.git
    ```
 
 2. Navigate to the project directory:
@@ -36,7 +36,7 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 To use `yt-live-checker` as a standalone CLI tool, run the following command (from the project root) with a YouTube channel ID, handle (with or without `@`), or channel URL:
 
 ```bash
-node src/index.js <channelIdentifier>
+node src/cli/index.js <channelIdentifier>
 ```
 
 Examples:
@@ -58,8 +58,10 @@ npm run check -- <channelIdentifier>
 npm run check:streams -- <channelIdentifier>
 npm run check:streams-json -- <channelIdentifier>
 npm run check:save-html -- <channelIdentifier>
-npm test                               # run parser/viewer smoke tests
+npm test                               # run parser/viewer + CLI/service tests
 ```
+
+Tests are organised under `tests/unit` (pure parsing/adapters) and `tests/integration` (service & CLI flows backed by recorded fixtures in `tests/fixtures/streams`).
 
 ### As a Dependency
 
