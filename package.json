@@ -28,15 +28,15 @@
   "author": "Your Name <your.email@example.com>",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.7.7",
+    "axios": "^1.12.2",
     "cheerio": "^1.0.0",
     "debug": "^4.3.7",
-    "jsonpath-plus": "^10.1.0",
+    "jsonpath-plus": "^10.3.0",
     "winston": "^3.16.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.14.0",
-    "eslint": "^9.14.0",
+    "@eslint/js": "^9.38.0",
+    "eslint": "^9.38.0",
     "globals": "^15.11.0",
     "nock": "^13.5.6"
   }

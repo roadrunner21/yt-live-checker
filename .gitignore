@@ -13,9 +13,6 @@ last_video_response.html
 .DS_Store
 Thumbs.db
 
-# Lock files
-package-lock.json
-
 # IDE specific files (optional, depending on your editor)
 .vscode/
 .idea/
