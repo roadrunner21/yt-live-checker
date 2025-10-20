@@ -44,7 +44,10 @@ Examples:
 node index.js UCCAfRoTJrKPbSrh_Eg3i4vg
 node index.js @BusinessInsider
 node index.js https://www.youtube.com/@BusinessInsider/streams
+node index.js --streams @IndiaToday   # also list all live/scheduled streams in the console output
 ```
+
+Add the optional `--streams` (or `-s`) flag to print a human-readable list of every live and scheduled broadcast before the JSON payload. This is useful when a channel runs multiple simultaneous streams.
 
 ### As a Dependency
 
@@ -78,31 +81,69 @@ checkChannelLiveStatus('@BusinessInsider', { customLogger })
 
 If you don't provide a custom logger, `yt-live-checker` will use its default logging configuration based on the `NODE_ENV` environment variable.
 
+Whenever multiple streams are in progress or scheduled, the returned object includes a `streams` property with `live` and `scheduled` collections (the scheduled list is `null` when there are no upcoming events) so you can inspect every event, while the top-level fields continue to describe the primary live stream for backwards compatibility. Each entry provides `viewerCount` as a number (when YouTube exposes “NN watching/waiting”), alongside the original text.
+
 ## Example Output
 
-When a channel is live, you’ll see output similar to:
+When a channel is live, the top-level fields mirror previous behaviour (describing the primary stream) and a `streams` section lists every live or scheduled event:
 
 ```json
 {
   "isLive": true,
   "videoId": "mf2fCLtUUVA",
   "title": "Drama Stream",
-  "viewCount": "243989",
+  "viewCount": "243,989 watching",
   "channelName": "TomDark",
   "channelId": "UCCAfRoTJrKPbSrh_Eg3i4vg",
-  "videoUrl": "https://www.youtube.com/watch?v=mf2fCLtUUVA"
+  "videoUrl": "https://www.youtube.com/watch?v=mf2fCLtUUVA",
+  "checkedAt": "2025-10-20T18:40:00.000Z",
+  "streams": {
+    "live": [
+      {
+        "videoId": "mf2fCLtUUVA",
+        "title": "Drama Stream",
+        "viewCountText": "243,989 watching",
+        "watchUrl": "https://www.youtube.com/watch?v=mf2fCLtUUVA",
+        "viewerCount": 243989
+      },
+      {
+        "videoId": "abc123",
+        "title": "Bonus Commentary",
+        "viewCountText": "17,201 watching",
+        "watchUrl": "https://www.youtube.com/watch?v=abc123",
+        "viewerCount": 17201
+      }
+    ],
+    "scheduled": null
+  }
 }
 ```
 
-When a channel is not live, the output will be:
+When no streams are live, `isLive` is false and you still receive any scheduled events:
 
 ```json
 {
   "isLive": false,
   "channelId": "UCCAfRoTJrKPbSrh_Eg3i4vg",
-  "channelName": "TomDark"
+  "channelName": "TomDark",
+  "checkedAt": "2025-10-20T18:40:00.000Z",
+  "streams": {
+    "live": [],
+    "scheduled": [
+      {
+        "videoId": "sched001",
+        "title": "Tomorrow's Big Premiere",
+        "viewCountText": "Scheduled for Oct 21, 2025",
+        "watchUrl": "https://www.youtube.com/watch?v=sched001",
+        "viewerCount": null,
+        "scheduledStartTime": 1761016800
+      }
+    ]
+  }
 }
 ```
+
+> **Stream ordering:** The `streams.live` array keeps YouTube’s native ordering for the channel’s streams. The first entry is whichever broadcast YouTube features on the `/streams` page, and the top-level `videoId/title/viewCount` reflect that same primary item. The `checkedAt` timestamp indicates when the lookup was performed.
 
 ## Dependencies
 

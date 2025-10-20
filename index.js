@@ -156,6 +156,231 @@ async function resolveChannelIdentifier(identifier, pkgLogger) {
 }
 
 /**
+ * Fetch a YouTube page, following redirects when necessary.
+ * @param {string} url - Fully-qualified URL to fetch.
+ * @param {Object} pkgLogger - Logger for diagnostics.
+ * @returns {Promise<string>} - Resolved HTML response.
+ */
+async function fetchYouTubePage(url, pkgLogger) {
+    pkgLogger?.debug?.(`Fetching URL: ${url}`);
+    try {
+        const response = await axios.get(url, {
+            headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US' },
+            maxRedirects: 5,
+            validateStatus: status => status >= 200 && status < 400,
+        });
+        if (typeof response.data !== 'string' || !response.data.trim()) {
+            throw new Error(`Empty response body from ${url}`);
+        }
+        return response.data;
+    } catch (error) {
+        const reason = error.response ? `HTTP ${error.response.status}` : error.message;
+        throw new Error(`Failed to fetch ${url}: ${reason}`);
+    }
+}
+
+/**
+ * Recursively collect video renderers from a streams tab payload.
+ * @param {any} root - Streams tab section to traverse.
+ * @returns {Array<Object>} - Array of video renderer objects.
+ */
+function collectVideoRenderers(root) {
+    const results = [];
+    const stack = Array.isArray(root) ? [...root] : [root];
+
+    while (stack.length) {
+        const current = stack.pop();
+        if (!current) {
+            continue;
+        }
+
+        if (Array.isArray(current)) {
+            for (const item of current) {
+                stack.push(item);
+            }
+            continue;
+        }
+
+        if (typeof current !== 'object') {
+            continue;
+        }
+
+        if (current.videoRenderer) {
+            results.push(current.videoRenderer);
+        }
+
+        if (current.gridVideoRenderer) {
+            results.push(current.gridVideoRenderer);
+        }
+
+        for (const [key, value] of Object.entries(current)) {
+            if (key === 'videoRenderer' || key === 'gridVideoRenderer') {
+                continue;
+            }
+            if (value && (typeof value === 'object' || Array.isArray(value))) {
+                stack.push(value);
+            }
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Normalize a video renderer into a stream descriptor and determine status.
+ * @param {Object} renderer - Raw video renderer payload.
+ * @returns {Object|null} - Normalized stream entry or null.
+ */
+function normalizeStreamEntry(renderer) {
+    const videoId = renderer?.videoId;
+    if (!videoId) {
+        return null;
+    }
+
+    const title = renderer?.title?.simpleText ||
+        (renderer?.title?.runs || []).map(run => run.text).join('') ||
+        '';
+    const badges = (renderer?.badges || [])
+        .map(badge => badge?.metadataBadgeRenderer?.label)
+        .filter(Boolean);
+
+    const viewCountText = renderer?.viewCountText?.simpleText ||
+        (renderer?.viewCountText?.runs || []).map(run => run.text).join('') ||
+        '';
+
+    const thumbnailOverlay = (renderer?.thumbnailOverlays || [])
+        .map(overlay => overlay?.thumbnailOverlayTimeStatusRenderer)
+        .filter(Boolean)[0] || null;
+
+    const overlayStyle = thumbnailOverlay?.style || '';
+    const overlayText = thumbnailOverlay?.text?.simpleText ||
+        (thumbnailOverlay?.text?.runs || []).map(run => run.text).join('') ||
+        '';
+
+    const upcomingEvent = renderer?.upcomingEventData;
+    const lowerViewText = (viewCountText || overlayText).toLowerCase();
+
+    const isUpcoming = Boolean(upcomingEvent) ||
+        overlayStyle === 'UPCOMING' ||
+        lowerViewText.includes('scheduled') ||
+        lowerViewText.includes('waiting');
+
+    const isLive = !isUpcoming && (
+        overlayStyle === 'LIVE' ||
+        badges.map(label => label.toLowerCase()).includes('live') ||
+        lowerViewText.includes('watching')
+    );
+
+    let viewerCount = null;
+    const countMatch = (viewCountText || overlayText).match(/([\d,.]+)\s*(watching|waiting)/i);
+    if (countMatch) {
+        const numeric = Number(countMatch[1].replace(/,/g, ''));
+        if (Number.isFinite(numeric)) {
+            viewerCount = numeric;
+        }
+    }
+
+    return {
+        videoId,
+        title,
+        viewCountText,
+        badges,
+        watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        isLive,
+        isUpcoming,
+        scheduledStartTime: upcomingEvent?.startTime ? Number(upcomingEvent.startTime) : undefined,
+        viewerCount,
+    };
+}
+
+/**
+ * Parse the streams page HTML and classify live/upcoming videos.
+ * @param {string} html - Raw HTML from the streams tab.
+ * @param {Object} pkgLogger - Logger instance.
+ * @returns {{channelName: string, channelId: string|null, liveStreams: Array<Object>, scheduledStreams: Array<Object>}}
+ */
+function parseStreamsPage(html, pkgLogger) {
+    const $ = cheerio.load(html);
+    let ytInitialData = null;
+
+    $('script').each((_, el) => {
+        if (ytInitialData) {
+            return;
+        }
+        const content = $(el).html();
+        if (!content) {
+            return;
+        }
+        const match = content.match(/ytInitialData\s*=\s*(\{.*?});/s);
+        if (match && match[1]) {
+            ytInitialData = JSON.parse(match[1]);
+        }
+    });
+
+    if (!ytInitialData) {
+        throw new Error('ytInitialData not found on streams page.');
+    }
+
+    const metadata = ytInitialData?.metadata?.channelMetadataRenderer || {};
+    const channelName = metadata.title || 'Unknown Channel';
+    const canonicalChannelId = metadata.externalId || metadata.channelId || null;
+
+    const tabs = ytInitialData?.contents?.twoColumnBrowseResultsRenderer?.tabs || [];
+    const streamsTab = tabs.find(tab => tab.tabRenderer?.selected) ||
+        tabs.find(tab => (tab.tabRenderer?.title || '').toLowerCase() === 'live');
+
+    const tabContent = streamsTab?.tabRenderer?.content || {};
+    const richGridRenderer = tabContent.richGridRenderer;
+    const sectionListRenderer = tabContent.sectionListRenderer;
+
+    let videoRenderers = [];
+    if (richGridRenderer) {
+        videoRenderers = collectVideoRenderers(richGridRenderer.contents || []);
+    } else if (sectionListRenderer) {
+        videoRenderers = collectVideoRenderers(sectionListRenderer.contents || []);
+    }
+
+    const seen = new Set();
+    const liveStreams = [];
+    const scheduledStreams = [];
+
+    for (const renderer of videoRenderers) {
+        const entry = normalizeStreamEntry(renderer);
+        if (!entry || !entry.videoId || seen.has(entry.videoId)) {
+            continue;
+        }
+
+        seen.add(entry.videoId);
+
+        const baseEntry = {
+            videoId: entry.videoId,
+            title: entry.title,
+            viewCountText: entry.viewCountText,
+            watchUrl: entry.watchUrl,
+        };
+        if (entry.viewerCount !== null) {
+            baseEntry.viewerCount = entry.viewerCount;
+        }
+        if (entry.badges?.length) {
+            baseEntry.badges = entry.badges;
+        }
+        if (entry.scheduledStartTime) {
+            baseEntry.scheduledStartTime = entry.scheduledStartTime;
+        }
+
+        if (entry.isLive) {
+            liveStreams.push(baseEntry);
+        } else if (entry.isUpcoming) {
+            scheduledStreams.push(baseEntry);
+        } else {
+            pkgLogger?.debug?.(`Ignoring non-live stream entry ${entry.videoId}`);
+        }
+    }
+
+    return { channelName, channelId: canonicalChannelId, liveStreams, scheduledStreams };
+}
+
+/**
  * Initialize Logger
  * @param {Object} [options] - Options for initializing the logger.
  * @param {Object} [options.customLogger] - Optional custom logger provided by the host application.
@@ -220,111 +445,56 @@ const logger = initializeLogger();
 async function checkChannelLiveStatus(channelIdentifier, options = {}) {
     const pkgLogger = initializeLogger(options);
     const { channelId, handle } = await resolveChannelIdentifier(channelIdentifier, pkgLogger);
-    const url = `https://www.youtube.com/channel/${channelId}/live`;
+    const streamsUrl = `https://www.youtube.com/channel/${channelId}/streams`;
     const targetDescriptor = handle ? `${channelId} (from ${handle})` : channelId;
-    pkgLogger.info(`Checking live status for channel: ${targetDescriptor} at ${url}`);
+    pkgLogger.info(`Checking live status for channel: ${targetDescriptor} at ${streamsUrl}`);
 
     try {
-        const response = await axios.get(url, {
-            headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US' },
-            maxRedirects: 0,
-            validateStatus: status => status >= 200 && status < 400,
-        });
+        const html = await fetchYouTubePage(streamsUrl, pkgLogger);
+        pkgLogger.debug('Streams page fetched successfully, parsing content...');
+        fs.writeFileSync(LAST_RESPONSE_FILE, html, 'utf8');
 
-        pkgLogger.debug('Request successful, parsing HTML...');
-        fs.writeFileSync(LAST_RESPONSE_FILE, response.data, 'utf8');
+        const { channelName, channelId: canonicalChannelId, liveStreams, scheduledStreams } = parseStreamsPage(html, pkgLogger);
+        const resolvedChannelId = canonicalChannelId || channelId;
 
-        const $ = cheerio.load(response.data);
-        let ytInitialData = null;
+        const result = {
+            isLive: liveStreams.length > 0,
+            channelId: resolvedChannelId,
+            channelName,
+            streams: {
+                live: liveStreams,
+                scheduled: scheduledStreams.length > 0 ? scheduledStreams : null,
+            },
+            checkedAt: new Date().toISOString(),
+        };
 
-        $('script').each(function() {
-            const htmlContent = String($(this).html() || '');
-            if (htmlContent.includes('ytInitialData')) {
-                const match = htmlContent.match(/ytInitialData\s*=\s*(\{.*?});/s);
-                if (match && match[1]) {
-                    ytInitialData = JSON.parse(match[1]);
-                    pkgLogger.debug('ytInitialData parsed successfully.');
-                    return false;
-                }
-            }
-            return undefined;
-        });
-
-        if (!ytInitialData) {
-            pkgLogger.warn('ytInitialData not found.');
-            const fallbackResult = { isLive: false, channelId, channelName: 'Unknown Channel' };
-            if (handle) {
-                fallbackResult.channelHandle = handle;
-            }
-            return fallbackResult;
-        }
-
-        const { channelName, channelIdExtracted } = extractChannelInfo(ytInitialData, channelId);
-
-        const twoColumnRoot = ytInitialData?.contents?.twoColumnWatchNextResults;
-        const resultsContainer = twoColumnRoot?.results?.results ?? {};
-        const resultItems = Array.isArray(resultsContainer.contents) ? resultsContainer.contents : [];
-        const primaryInfo = resultItems[0]?.videoPrimaryInfoRenderer;
-        if (primaryInfo) {
-            const viewCountRenderer = primaryInfo.viewCount?.videoViewCountRenderer;
-            if (viewCountRenderer?.isLive) {
-                pkgLogger.info(`Channel ${channelId} is live!`);
-
-                const title = primaryInfo.title?.runs?.[0]?.text || '';
-                const viewCount = (viewCountRenderer.viewCount?.runs || [])
-                    .map(run => run.text)
-                    .join('')
-                    .replace(' watching now', '')
-                    .trim();
-
-                const currentEndpoint = ytInitialData?.currentVideoEndpoint?.watchEndpoint;
-                const videoId = currentEndpoint?.videoId;
-                const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-                const liveResult = { isLive: true, videoId, title, viewCount, channelName, channelId: channelIdExtracted, videoUrl };
-                if (handle) {
-                    liveResult.channelHandle = handle;
-                }
-                return liveResult;
-            }
-        }
-
-        pkgLogger.info(`Channel ${channelId} is not live at the moment.`);
-        const offlineResult = { isLive: false, channelId: channelIdExtracted, channelName };
         if (handle) {
-            offlineResult.channelHandle = handle;
+            result.channelHandle = handle;
         }
-        return offlineResult;
+
+        if (result.isLive) {
+            const primaryStream = liveStreams[0];
+            result.videoId = primaryStream.videoId;
+            result.title = primaryStream.title;
+            result.viewCount = primaryStream.viewCountText;
+            result.videoUrl = primaryStream.watchUrl;
+
+            pkgLogger.info(`Channel ${resolvedChannelId} is live with ${liveStreams.length} stream${liveStreams.length === 1 ? '' : 's'}.`);
+        } else {
+            pkgLogger.info(`Channel ${resolvedChannelId} is not live at the moment.`);
+            if (scheduledStreams.length > 0) {
+                pkgLogger.info(`Found ${scheduledStreams.length} upcoming stream${scheduledStreams.length === 1 ? '' : 's'}.`);
+            }
+        }
+
+        return result;
     } catch (error) {
         pkgLogger.error(`Error checking live status: ${error.message}`);
-        fs.writeFileSync(ERROR_RESPONSE_FILE, error.response?.data || '', 'utf8');
+        if (error.response?.data) {
+            fs.writeFileSync(ERROR_RESPONSE_FILE, error.response.data, 'utf8');
+        }
         throw error;
     }
-}
-
-// Helper function to extract channel information
-function extractChannelInfo(ytInitialData, defaultChannelId) {
-    let channelName = 'Unknown Channel';
-    let channelIdExtracted = defaultChannelId;
-
-    const twoColumnRoot = ytInitialData?.contents?.twoColumnWatchNextResults;
-    const resultsContainer = twoColumnRoot?.results?.results ?? {};
-    const resultItems = Array.isArray(resultsContainer.contents) ? resultsContainer.contents : [];
-    const secondaryInfo = resultItems[1]?.videoSecondaryInfoRenderer;
-    if (secondaryInfo) {
-        channelName = secondaryInfo.owner?.videoOwnerRenderer?.title?.runs?.[0]?.text || channelName;
-        channelIdExtracted = secondaryInfo.owner?.videoOwnerRenderer?.navigationEndpoint?.browseEndpoint?.browseId || channelIdExtracted;
-    } else {
-        const metadata = ytInitialData?.metadata?.channelMetadataRenderer;
-        const microformat = ytInitialData?.microformat?.microformatDataRenderer;
-        const responseContext = ytInitialData?.responseContext?.webResponseContextExtensionData?.ytConfigData;
-        channelName = metadata?.title ||
-            microformat?.ownerChannelName ||
-            (responseContext?.canonicalBaseUrl || '').replace('/@', '') ||
-            channelName;
-    }
-
-    return { channelName, channelIdExtracted };
 }
 
 // Export only the main function
@@ -332,7 +502,10 @@ exports.checkChannelLiveStatus = checkChannelLiveStatus;
 
 // If run as a standalone script, take the identifier from CLI
 if (require.main === module) {
-    const channelIdentifier = process.argv[2];
+    const args = process.argv.slice(2);
+    const wantsStreamList = args.includes('--streams') || args.includes('-s');
+    const channelIdentifier = args.find(arg => !arg.startsWith('-'));
+
     if (!channelIdentifier) {
         logger.error('Please provide a YouTube channel ID, handle, or channel URL.');
         process.exit(1);
@@ -341,6 +514,30 @@ if (require.main === module) {
     checkChannelLiveStatus(channelIdentifier)
         .then(result => {
             logger.info(result.isLive ? 'The channel is live!' : 'The channel is not live currently.');
+
+            if (wantsStreamList) {
+                if (result.streams.live.length > 0) {
+                    logger.info('Live streams:');
+                    result.streams.live.forEach((stream, index) => {
+                        const count = typeof stream.viewerCount === 'number' ? `${stream.viewerCount} viewers` : 'viewer count unavailable';
+                        logger.info(`  ${index + 1}. ${stream.title} — ${count} — ${stream.watchUrl}`);
+                    });
+                } else {
+                    logger.info('No live streams detected.');
+                }
+
+                if (result.streams.scheduled && result.streams.scheduled.length > 0) {
+                    logger.info('Scheduled streams:');
+                    result.streams.scheduled.forEach((stream, index) => {
+                        const waitingText = typeof stream.viewerCount === 'number' ? `${stream.viewerCount} waiting` : 'waiting count unavailable';
+                        const startTime = stream.scheduledStartTime ? new Date(stream.scheduledStartTime * 1000).toISOString() : 'start time unknown';
+                        logger.info(`  ${index + 1}. ${stream.title} — ${waitingText} — starts at ${startTime} — ${stream.watchUrl}`);
+                    });
+                } else {
+                    logger.info('No scheduled streams detected.');
+                }
+            }
+
             logger.info(JSON.stringify(result, null, 2));
         })
         .catch(error => {
