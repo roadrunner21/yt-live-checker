@@ -33,13 +33,13 @@ function mockChannelPage(channelId) {
         .reply(200, html);
 }
 
-test('resolveChannelIdentifier returns canonical ID when provided an ID', async () => {
+test('resolveChannelIdentifier returns canonical ID when provided an ID', async() => {
     const id = 'UC1234567890ABCDEFGHIJ';
     const result = await resolveChannelIdentifier(id);
     assert.deepEqual(result, { channelId: id, handle: null });
 });
 
-test('resolveChannelIdentifier resolves simple handle', async () => {
+test('resolveChannelIdentifier resolves simple handle', async() => {
     const channelId = 'UCabcdefabcdefabcdefabcd';
     mockHandleResponse('@example', `<html><head><meta itemprop="identifier" content="${channelId}"></head></html>`);
 
@@ -50,7 +50,7 @@ test('resolveChannelIdentifier resolves simple handle', async () => {
     nock.cleanAll();
 });
 
-test('resolveChannelIdentifier follows redirects for handles', async () => {
+test('resolveChannelIdentifier follows redirects for handles', async() => {
     const channelId = 'UCredirectredirectredirect12';
     mockRedirectHandle('@redirect', channelId);
     mockChannelPage(channelId);

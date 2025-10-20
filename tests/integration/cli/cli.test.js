@@ -35,7 +35,7 @@ function extractJson(stdout) {
     return JSON.parse(jsonString);
 }
 
-test('CLI outputs JSON for live channel', async () => {
+test('CLI outputs JSON for live channel', async() => {
     const { stdout } = await execCli(['@TheSilentWatcher'], 'single_live');
     const result = extractJson(stdout);
 
@@ -45,7 +45,7 @@ test('CLI outputs JSON for live channel', async () => {
     assert.equal(result.streams.scheduled, null);
 });
 
-test('CLI handles offline channel', async () => {
+test('CLI handles offline channel', async() => {
     const { stdout } = await execCli(['@eons'], 'none');
     const result = extractJson(stdout);
 

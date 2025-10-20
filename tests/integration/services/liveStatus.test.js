@@ -40,7 +40,7 @@ test.after(() => {
     nock.enableNetConnect();
 });
 
-test('checkChannelLiveStatus returns live result with scheduled streams', async () => {
+test('checkChannelLiveStatus returns live result with scheduled streams', async() => {
     const handle = '@Firstpost';
     const channelId = 'UCz8QaiQxApLq8sLNcszYyJw';
 
@@ -59,7 +59,7 @@ test('checkChannelLiveStatus returns live result with scheduled streams', async 
     assert.equal(result.streams.scheduled[0].videoId, 's8fnTMVKtxk');
 });
 
-test('checkChannelLiveStatus returns offline result when no streams', async () => {
+test('checkChannelLiveStatus returns offline result when no streams', async() => {
     const handle = '@eons';
     const channelId = 'UCzR-rom72PHN9Zg7RML9EbA';
 
