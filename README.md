@@ -41,15 +41,24 @@ node src/index.js <channelIdentifier>
 
 Examples:
 ```bash
-node src/index.js UCCAfRoTJrKPbSrh_Eg3i4vg
-node src/index.js @BusinessInsider
-node src/index.js https://www.youtube.com/@BusinessInsider/streams
-node src/index.js --streams @IndiaToday   # also list all live/scheduled streams in the console output
-node src/index.js --streams-json @IndiaToday   # pretty-print just the streams object
-node src/index.js --save-html @IndiaToday     # persist the fetched HTML response for debugging
+node src/cli/index.js UCCAfRoTJrKPbSrh_Eg3i4vg
+node src/cli/index.js @BusinessInsider
+node src/cli/index.js https://www.youtube.com/@BusinessInsider/streams
+node src/cli/index.js --streams @IndiaToday       # also list all live/scheduled streams in the console output
+node src/cli/index.js --streams-json @IndiaToday  # pretty-print just the streams object
+node src/cli/index.js --save-html @IndiaToday     # persist the fetched HTML response for debugging
 ```
 
 Add the optional `--streams` (or `-s`) flag to print a human-readable list of every live and scheduled broadcast before the JSON payload. Use `--streams-json` (or `-j`) to emit just the `streams` object to stdout, and `--save-html` to persist the latest response in `last_response.html` / `error_response.html` for debugging. Requests are forced to `Accept-Language: en-US`, so the tool currently assumes English overlay text when parsing counts.
+
+For convenience, the following npm scripts wrap the CLI:
+
+```bash
+npm run check -- <channelIdentifier>
+npm run check:streams -- <channelIdentifier>
+npm run check:streams-json -- <channelIdentifier>
+npm run check:save-html -- <channelIdentifier>
+```
 
 ### As a Dependency
 
