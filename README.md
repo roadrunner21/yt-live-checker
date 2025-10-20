@@ -33,17 +33,17 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 ### As a Standalone Tool
 
-To use `yt-live-checker` as a standalone CLI tool, run the following command with the YouTube channel ID as an argument:
+To use `yt-live-checker` as a standalone CLI tool, run the following command with a YouTube channel ID, handle (with or without `@`), or channel URL:
 
 ```bash
-node index.js <channelId>
+node index.js <channelIdentifier>
 ```
 
-Replace `<channelId>` with the ID of the YouTube channel you want to check.
-
-Example:
+Examples:
 ```bash
 node index.js UCCAfRoTJrKPbSrh_Eg3i4vg
+node index.js @BusinessInsider
+node index.js https://www.youtube.com/@BusinessInsider/streams
 ```
 
 ### As a Dependency
@@ -67,7 +67,7 @@ const customLogger = winston.createLogger({
     transports: [new winston.transports.Console()]
 });
 
-checkChannelLiveStatus('UCCAfRoTJrKPbSrh_Eg3i4vg', { logger: customLogger })
+checkChannelLiveStatus('@BusinessInsider', { customLogger })
     .then(result => {
         console.log(result);
     })
@@ -86,7 +86,7 @@ When a channel is live, you’ll see output similar to:
 {
   "isLive": true,
   "videoId": "mf2fCLtUUVA",
-  "title": "Bowblax: Criticism Not Welcome",
+  "title": "Drama Stream",
   "viewCount": "243989",
   "channelName": "TomDark",
   "channelId": "UCCAfRoTJrKPbSrh_Eg3i4vg",
@@ -115,4 +115,3 @@ This project relies on the following Node.js packages:
 ## License
 
 This project is licensed under the [Prosperity Public License](./LICENSE). You are free to use this software non-commercially. For commercial use, please contact the author for permission or refer to the terms in the license.
-

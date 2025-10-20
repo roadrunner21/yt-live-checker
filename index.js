@@ -10,6 +10,123 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
 const LOG_FILE = path.join(__dirname, 'channel_live_check.log');
 const LAST_RESPONSE_FILE = path.join(__dirname, 'last_response.html');
 const ERROR_RESPONSE_FILE = path.join(__dirname, 'error_response.html');
+const CHANNEL_ID_REGEX = /^UC[\w-]{20,}$/;
+
+/**
+ * Attempt to extract a channel handle (e.g., @ExampleChannel) from user input.
+ * @param {string} identifier - Raw identifier provided by the caller.
+ * @returns {string|null} - Normalized handle starting with '@' or null if unavailable.
+ */
+function extractHandleFromIdentifier(identifier) {
+    if (typeof identifier !== 'string') {
+        return null;
+    }
+
+    const trimmed = identifier.trim();
+    if (!trimmed) {
+        return null;
+    }
+
+    if (CHANNEL_ID_REGEX.test(trimmed)) {
+        return null;
+    }
+
+    try {
+        const parsedUrl = new URL(trimmed);
+        const segments = parsedUrl.pathname.split('/').filter(Boolean);
+        const handleSegment = segments.find(segment => segment.startsWith('@'));
+        if (handleSegment) {
+            return `@${handleSegment.replace(/^@/, '')}`;
+        }
+
+        if (segments.length >= 2 && segments[0] === 'channel' && CHANNEL_ID_REGEX.test(segments[1])) {
+            return null;
+        }
+    } catch {
+        // Not a URL, fall through to string-based parsing.
+    }
+
+    if (trimmed.startsWith('@')) {
+        return trimmed.split('/')[0];
+    }
+
+    if (/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+        return `@${trimmed.split('/')[0]}`;
+    }
+
+    return null;
+}
+
+/**
+ * Resolve a YouTube channel identifier to a canonical channel ID.
+ * Accepts channel IDs, handles, and channel URLs.
+ * @param {string} identifier - Channel ID, handle, or URL.
+ * @param {Object} pkgLogger - Logger instance for diagnostics.
+ * @returns {Promise<{channelId: string, handle: string|null}>}
+ */
+async function resolveChannelIdentifier(identifier, pkgLogger) {
+    if (typeof identifier !== 'string' || !identifier.trim()) {
+        throw new Error('Channel identifier is required.');
+    }
+
+    const trimmed = identifier.trim();
+
+    if (CHANNEL_ID_REGEX.test(trimmed)) {
+        return { channelId: trimmed, handle: null };
+    }
+
+    try {
+        const urlCandidate = new URL(trimmed);
+        const segments = urlCandidate.pathname.split('/').filter(Boolean);
+        if (segments.length >= 2 && segments[0] === 'channel' && CHANNEL_ID_REGEX.test(segments[1])) {
+            return { channelId: segments[1], handle: null };
+        }
+    } catch {
+        // Not a valid URL; continue to handle resolution.
+    }
+
+    let handle = extractHandleFromIdentifier(trimmed);
+    if (!handle) {
+        throw new Error(`Unable to interpret channel identifier "${identifier}". Provide a channel ID or handle.`);
+    }
+
+    if (!handle.startsWith('@')) {
+        handle = `@${handle}`;
+    }
+    handle = handle.split('/')[0];
+
+    const handleUrl = `https://www.youtube.com/${handle}`;
+    pkgLogger?.debug?.(`Resolving handle ${handle} via ${handleUrl}`);
+
+    let response;
+    try {
+        response = await axios.get(handleUrl, {
+            headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US' },
+            maxRedirects: 0,
+            validateStatus: status => status >= 200 && status < 400,
+        });
+    } catch (error) {
+        const reason = error.response ? `HTTP ${error.response.status}` : error.message;
+        throw new Error(`Failed to resolve handle ${handle}: ${reason}`);
+    }
+
+    const $ = cheerio.load(response.data);
+    let channelId = $('meta[itemprop="identifier"]').attr('content') ||
+        $('meta[itemprop="channelId"]').attr('content');
+
+    if (!channelId) {
+        const match = response.data.match(/"browseId":"(UC[\w-]{20,})"/);
+        if (match) {
+            [, channelId] = match;
+        }
+    }
+
+    if (!channelId || !CHANNEL_ID_REGEX.test(channelId)) {
+        throw new Error(`Unable to resolve channel ID from handle ${handle}.`);
+    }
+
+    return { channelId, handle };
+}
 
 /**
  * Initialize Logger
@@ -66,17 +183,19 @@ function initializeLogger(options = {}) {
 const logger = initializeLogger();
 
 /**
- * Check if a YouTube channel is live
- * @param {string} channelId - The YouTube channel ID.
+ * Check if a YouTube channel is live.
+ * @param {string} channelIdentifier - Channel ID, handle, or URL.
  * @param {Object} [options] - Options for the function.
  * @param {Object} [options.customLogger] - Optional custom logger provided by the host application.
  * @param {boolean} [options.enableLogging] - Enable logging when used as a dependency.
  * @returns {Promise<Object>} - Object containing live status and channel info.
  */
-async function checkChannelLiveStatus(channelId, options = {}) {
+async function checkChannelLiveStatus(channelIdentifier, options = {}) {
     const pkgLogger = initializeLogger(options);
+    const { channelId, handle } = await resolveChannelIdentifier(channelIdentifier, pkgLogger);
     const url = `https://www.youtube.com/channel/${channelId}/live`;
-    pkgLogger.info(`Checking live status for channel: ${channelId} at ${url}`);
+    const targetDescriptor = handle ? `${channelId} (from ${handle})` : channelId;
+    pkgLogger.info(`Checking live status for channel: ${targetDescriptor} at ${url}`);
 
     try {
         const response = await axios.get(url, {
@@ -106,12 +225,19 @@ async function checkChannelLiveStatus(channelId, options = {}) {
 
         if (!ytInitialData) {
             pkgLogger.warn('ytInitialData not found.');
-            return { isLive: false, channelId, channelName: 'Unknown Channel' };
+            const fallbackResult = { isLive: false, channelId, channelName: 'Unknown Channel' };
+            if (handle) {
+                fallbackResult.channelHandle = handle;
+            }
+            return fallbackResult;
         }
 
         const { channelName, channelIdExtracted } = extractChannelInfo(ytInitialData, channelId);
 
-        const primaryInfo = ytInitialData?.contents?.twoColumnWatchNextResults?.results?.results?.contents?.[0]?.videoPrimaryInfoRenderer;
+        const twoColumnRoot = ytInitialData?.contents?.twoColumnWatchNextResults;
+        const resultsContainer = twoColumnRoot?.results?.results ?? {};
+        const resultItems = Array.isArray(resultsContainer.contents) ? resultsContainer.contents : [];
+        const primaryInfo = resultItems[0]?.videoPrimaryInfoRenderer;
         if (primaryInfo) {
             const viewCountRenderer = primaryInfo.viewCount?.videoViewCountRenderer;
             if (viewCountRenderer?.isLive) {
@@ -124,15 +250,24 @@ async function checkChannelLiveStatus(channelId, options = {}) {
                     .replace(' watching now', '')
                     .trim();
 
-                const videoId = ytInitialData?.currentVideoEndpoint?.watchEndpoint?.videoId;
+                const currentEndpoint = ytInitialData?.currentVideoEndpoint?.watchEndpoint;
+                const videoId = currentEndpoint?.videoId;
                 const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-                return { isLive: true, videoId, title, viewCount, channelName, channelId: channelIdExtracted, videoUrl };
+                const liveResult = { isLive: true, videoId, title, viewCount, channelName, channelId: channelIdExtracted, videoUrl };
+                if (handle) {
+                    liveResult.channelHandle = handle;
+                }
+                return liveResult;
             }
         }
 
         pkgLogger.info(`Channel ${channelId} is not live at the moment.`);
-        return { isLive: false, channelId: channelIdExtracted, channelName };
+        const offlineResult = { isLive: false, channelId: channelIdExtracted, channelName };
+        if (handle) {
+            offlineResult.channelHandle = handle;
+        }
+        return offlineResult;
     } catch (error) {
         pkgLogger.error(`Error checking live status: ${error.message}`);
         fs.writeFileSync(ERROR_RESPONSE_FILE, error.response?.data || '', 'utf8');
@@ -145,14 +280,20 @@ function extractChannelInfo(ytInitialData, defaultChannelId) {
     let channelName = 'Unknown Channel';
     let channelIdExtracted = defaultChannelId;
 
-    const secondaryInfo = ytInitialData?.contents?.twoColumnWatchNextResults?.results?.results?.contents?.[1]?.videoSecondaryInfoRenderer;
+    const twoColumnRoot = ytInitialData?.contents?.twoColumnWatchNextResults;
+    const resultsContainer = twoColumnRoot?.results?.results ?? {};
+    const resultItems = Array.isArray(resultsContainer.contents) ? resultsContainer.contents : [];
+    const secondaryInfo = resultItems[1]?.videoSecondaryInfoRenderer;
     if (secondaryInfo) {
         channelName = secondaryInfo.owner?.videoOwnerRenderer?.title?.runs?.[0]?.text || channelName;
         channelIdExtracted = secondaryInfo.owner?.videoOwnerRenderer?.navigationEndpoint?.browseEndpoint?.browseId || channelIdExtracted;
     } else {
-        channelName = ytInitialData?.metadata?.channelMetadataRenderer?.title ||
-            ytInitialData?.microformat?.microformatDataRenderer?.ownerChannelName ||
-            (ytInitialData?.responseContext?.webResponseContextExtensionData?.ytConfigData?.canonicalBaseUrl || '').replace('/@', '') ||
+        const metadata = ytInitialData?.metadata?.channelMetadataRenderer;
+        const microformat = ytInitialData?.microformat?.microformatDataRenderer;
+        const responseContext = ytInitialData?.responseContext?.webResponseContextExtensionData?.ytConfigData;
+        channelName = metadata?.title ||
+            microformat?.ownerChannelName ||
+            (responseContext?.canonicalBaseUrl || '').replace('/@', '') ||
             channelName;
     }
 
@@ -162,15 +303,15 @@ function extractChannelInfo(ytInitialData, defaultChannelId) {
 // Export only the main function
 exports.checkChannelLiveStatus = checkChannelLiveStatus;
 
-// If run as a standalone script, take the channel ID from CLI
+// If run as a standalone script, take the identifier from CLI
 if (require.main === module) {
-    const channelId = process.argv[2];
-    if (!channelId) {
-        logger.error('Please provide a YouTube channel ID.');
+    const channelIdentifier = process.argv[2];
+    if (!channelIdentifier) {
+        logger.error('Please provide a YouTube channel ID, handle, or channel URL.');
         process.exit(1);
     }
 
-    checkChannelLiveStatus(channelId)
+    checkChannelLiveStatus(channelIdentifier)
         .then(result => {
             logger.info(result.isLive ? 'The channel is live!' : 'The channel is not live currently.');
             logger.info(JSON.stringify(result, null, 2));

@@ -3,6 +3,9 @@ import js from "@eslint/js";
 
 export default [
     {
+        ignores: ['eslint.config.mjs'],
+    },
+    {
         // Set the language options for ECMAScript and CommonJS
         languageOptions: {
             ecmaVersion: 2021,
