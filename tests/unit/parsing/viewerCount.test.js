@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseViewerCount } = require('../src/parsing/viewerCount');
+const { parseViewerCount } = require('../../../src/parsing/viewerCount');
 
 test('parseViewerCount handles plain numbers', () => {
     assert.equal(parseViewerCount('1,234 watching'), 1234);

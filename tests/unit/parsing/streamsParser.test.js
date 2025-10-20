@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const { parseStreamsPage } = require('../src/parsing/streamsParser');
+const { parseStreamsPage } = require('../../../src/parsing/streamsParser');
 
-const fixturesDir = path.join(__dirname, 'fixtures', 'streams');
+const fixturesDir = path.join(__dirname, '..', '..', 'fixtures', 'streams');
 
 function loadFixture(name) {
     return fs.readFileSync(path.join(fixturesDir, name), 'utf8');
