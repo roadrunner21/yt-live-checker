@@ -33,21 +33,23 @@ A Node.js tool to check if a YouTube channel is currently live streaming.
 
 ### As a Standalone Tool
 
-To use `yt-live-checker` as a standalone CLI tool, run the following command with a YouTube channel ID, handle (with or without `@`), or channel URL:
+To use `yt-live-checker` as a standalone CLI tool, run the following command (from the project root) with a YouTube channel ID, handle (with or without `@`), or channel URL:
 
 ```bash
-node index.js <channelIdentifier>
+node src/index.js <channelIdentifier>
 ```
 
 Examples:
 ```bash
-node index.js UCCAfRoTJrKPbSrh_Eg3i4vg
-node index.js @BusinessInsider
-node index.js https://www.youtube.com/@BusinessInsider/streams
-node index.js --streams @IndiaToday   # also list all live/scheduled streams in the console output
+node src/index.js UCCAfRoTJrKPbSrh_Eg3i4vg
+node src/index.js @BusinessInsider
+node src/index.js https://www.youtube.com/@BusinessInsider/streams
+node src/index.js --streams @IndiaToday   # also list all live/scheduled streams in the console output
+node src/index.js --streams-json @IndiaToday   # pretty-print just the streams object
+node src/index.js --save-html @IndiaToday     # persist the fetched HTML response for debugging
 ```
 
-Add the optional `--streams` (or `-s`) flag to print a human-readable list of every live and scheduled broadcast before the JSON payload. This is useful when a channel runs multiple simultaneous streams.
+Add the optional `--streams` (or `-s`) flag to print a human-readable list of every live and scheduled broadcast before the JSON payload. Use `--streams-json` (or `-j`) to emit just the `streams` object to stdout, and `--save-html` to persist the latest response in `last_response.html` / `error_response.html` for debugging. Requests are forced to `Accept-Language: en-US`, so the tool currently assumes English overlay text when parsing counts.
 
 ### As a Dependency
 

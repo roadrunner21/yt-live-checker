@@ -1,4 +1,4 @@
-// index.js
+// src/index.js
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
@@ -6,10 +6,11 @@ const path = require('path');
 const { createLogger, format, transports } = require('winston');
 
 // Constants and Configuration
+const ROOT_DIR = path.resolve(__dirname, '..');
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
-const LOG_FILE = path.join(__dirname, 'channel_live_check.log');
-const LAST_RESPONSE_FILE = path.join(__dirname, 'last_response.html');
-const ERROR_RESPONSE_FILE = path.join(__dirname, 'error_response.html');
+const LOG_FILE = path.join(ROOT_DIR, 'channel_live_check.log');
+const LAST_RESPONSE_FILE = path.join(ROOT_DIR, 'last_response.html');
+const ERROR_RESPONSE_FILE = path.join(ROOT_DIR, 'error_response.html');
 const CHANNEL_ID_REGEX = /^UC[\w-]{20,}$/;
 
 /**
@@ -227,6 +228,55 @@ function collectVideoRenderers(root) {
 }
 
 /**
+ * Parse the viewer count/waiting text into a numeric value when possible.
+ * @param {string} text - Raw view count text (e.g. "1,234 watching", "3.4K waiting").
+ * @returns {number|null} - Parsed numeric value or null when unavailable.
+ */
+function parseViewerCount(text) {
+    if (!text) {
+        return null;
+    }
+
+    const normalized = text
+        .replace(/\u00A0/g, ' ')
+        .replace(/\u202F/g, ' ')
+        .trim();
+
+    const match = normalized.match(/([\d.,]+)\s*(K|M|B)?\s*(watching|waiting)/i);
+    if (!match) {
+        return null;
+    }
+
+    let numericPart = match[1].trim();
+    const suffix = match[2]?.toUpperCase() || null;
+
+    // Handle thousands separators used as dots (e.g. "1.234 watching").
+    if (!suffix && numericPart.includes('.') && !numericPart.includes(',')) {
+        const [, decimals] = numericPart.split('.');
+        if (decimals && decimals.length === 3) {
+            numericPart = numericPart.replace(/\./g, '');
+        }
+    }
+
+    const cleaned = numericPart.replace(/,/g, '');
+    const baseValue = Number.parseFloat(cleaned);
+    if (!Number.isFinite(baseValue)) {
+        return null;
+    }
+
+    let multiplier = 1;
+    if (suffix === 'K') {
+        multiplier = 1e3;
+    } else if (suffix === 'M') {
+        multiplier = 1e6;
+    } else if (suffix === 'B') {
+        multiplier = 1e9;
+    }
+
+    return Math.round(baseValue * multiplier);
+}
+
+/**
  * Normalize a video renderer into a stream descriptor and determine status.
  * @param {Object} renderer - Raw video renderer payload.
  * @returns {Object|null} - Normalized stream entry or null.
@@ -271,14 +321,7 @@ function normalizeStreamEntry(renderer) {
         lowerViewText.includes('watching')
     );
 
-    let viewerCount = null;
-    const countMatch = (viewCountText || overlayText).match(/([\d,.]+)\s*(watching|waiting)/i);
-    if (countMatch) {
-        const numeric = Number(countMatch[1].replace(/,/g, ''));
-        if (Number.isFinite(numeric)) {
-            viewerCount = numeric;
-        }
-    }
+    const viewerCount = parseViewerCount(viewCountText || overlayText);
 
     return {
         videoId,
@@ -358,7 +401,7 @@ function parseStreamsPage(html, pkgLogger) {
             viewCountText: entry.viewCountText,
             watchUrl: entry.watchUrl,
         };
-        if (entry.viewerCount !== null) {
+        if (typeof entry.viewerCount === 'number') {
             baseEntry.viewerCount = entry.viewerCount;
         }
         if (entry.badges?.length) {
@@ -440,9 +483,11 @@ const logger = initializeLogger();
  * @param {Object} [options] - Options for the function.
  * @param {Object} [options.customLogger] - Optional custom logger provided by the host application.
  * @param {boolean} [options.enableLogging] - Enable logging when used as a dependency.
+ * @param {boolean} [options.saveHtml] - Persist the fetched HTML response to disk for debugging.
  * @returns {Promise<Object>} - Object containing live status and channel info.
  */
 async function checkChannelLiveStatus(channelIdentifier, options = {}) {
+    const { saveHtml = false } = options;
     const pkgLogger = initializeLogger(options);
     const { channelId, handle } = await resolveChannelIdentifier(channelIdentifier, pkgLogger);
     const streamsUrl = `https://www.youtube.com/channel/${channelId}/streams`;
@@ -452,7 +497,10 @@ async function checkChannelLiveStatus(channelIdentifier, options = {}) {
     try {
         const html = await fetchYouTubePage(streamsUrl, pkgLogger);
         pkgLogger.debug('Streams page fetched successfully, parsing content...');
-        fs.writeFileSync(LAST_RESPONSE_FILE, html, 'utf8');
+
+        if (saveHtml) {
+            fs.writeFileSync(LAST_RESPONSE_FILE, html, 'utf8');
+        }
 
         const { channelName, channelId: canonicalChannelId, liveStreams, scheduledStreams } = parseStreamsPage(html, pkgLogger);
         const resolvedChannelId = canonicalChannelId || channelId;
@@ -490,7 +538,7 @@ async function checkChannelLiveStatus(channelIdentifier, options = {}) {
         return result;
     } catch (error) {
         pkgLogger.error(`Error checking live status: ${error.message}`);
-        if (error.response?.data) {
+        if (saveHtml && error.response?.data) {
             fs.writeFileSync(ERROR_RESPONSE_FILE, error.response.data, 'utf8');
         }
         throw error;
@@ -503,7 +551,12 @@ exports.checkChannelLiveStatus = checkChannelLiveStatus;
 // If run as a standalone script, take the identifier from CLI
 if (require.main === module) {
     const args = process.argv.slice(2);
-    const wantsStreamList = args.includes('--streams') || args.includes('-s');
+    const flagSet = new Set(args.filter(arg => arg.startsWith('-')));
+
+    const wantsStreamList = flagSet.has('--streams') || flagSet.has('-s');
+    const wantsStreamsJson = flagSet.has('--streams-json') || flagSet.has('-j');
+    const wantsSaveHtml = flagSet.has('--save-html');
+
     const channelIdentifier = args.find(arg => !arg.startsWith('-'));
 
     if (!channelIdentifier) {
@@ -511,7 +564,7 @@ if (require.main === module) {
         process.exit(1);
     }
 
-    checkChannelLiveStatus(channelIdentifier)
+    checkChannelLiveStatus(channelIdentifier, { saveHtml: wantsSaveHtml })
         .then(result => {
             logger.info(result.isLive ? 'The channel is live!' : 'The channel is not live currently.');
 
@@ -538,9 +591,14 @@ if (require.main === module) {
                 }
             }
 
+            if (wantsStreamsJson) {
+                process.stdout.write(`${JSON.stringify(result.streams, null, 2)}\n`);
+            }
+
             logger.info(JSON.stringify(result, null, 2));
         })
         .catch(error => {
             logger.error(`Failed to check live status: ${error.message}`);
+            process.exitCode = 1;
         });
 }

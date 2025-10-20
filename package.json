@@ -2,11 +2,15 @@
   "name": "yt-live-checker",
   "version": "1.0.0",
   "description": "A tool to check if a YouTube channel is currently live streaming.",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node src/index.js",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "check": "node src/index.js",
+    "check:streams": "node src/index.js --streams",
+    "check:streams-json": "node src/index.js --streams-json",
+    "check:save-html": "node src/index.js --save-html"
   },
   "keywords": [
     "YouTube",
